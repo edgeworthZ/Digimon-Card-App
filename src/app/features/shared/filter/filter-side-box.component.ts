@@ -1,6 +1,9 @@
 import {
   Component,
+  computed,
+  effect,
   EventEmitter,
+  inject,
   Input,
   OnDestroy,
   OnInit,
@@ -11,27 +14,27 @@ import {
   UntypedFormControl,
   UntypedFormGroup,
 } from '@angular/forms';
-import { Store } from '@ngrx/store';
 import { MessageService } from 'primeng/api';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { debounceTime, Subject, takeUntil } from 'rxjs';
 import { itemsAsSelectItem } from 'src/app/functions/digimon-card.functions';
-import { IFilter, Presets } from '../../../../models';
 import {
   Attributes,
   Colors,
+  emptyFilter,
   Forms,
+  IFilter,
   Illustrators,
   Keywords,
+  Presets,
   Restrictions,
   SpecialRequirements,
   Types,
-} from '../../../../models/data/filter.data';
-import { selectFilter } from '../../../store/digimon.selectors';
-import { emptyFilter } from '../../../store/reducers/digimon.reducers';
+} from '../../../../models';
+import { FilterStore } from '../../../store/filter.store';
+import { SaveStore } from '../../../store/save.store';
 import { RangeSliderComponent } from '../range-slider.component';
 import { SortButtonsComponent } from '../sort-buttons.component';
-import { WebsiteActions } from './../../../store/digimon.actions';
 import { BlockFilterComponent } from './block-filter.component';
 import { CardTypeFilterComponent } from './card-type-filter.component';
 import { ColorFilterComponent } from './color-filter.component';
@@ -128,12 +131,16 @@ import { VersionFilterComponent } from './version-filter.component';
       <div class="flex flex-row">
         <digimon-range-slider
           [reset]="resetEmitter"
-          [minMax]="[0, 5]"
+          [minMax]="[0, collectionCountMax() ?? 5]"
           [filterFormControl]="cardCountFilter"
           title="Number in Collection:"
           class="w-full"></digimon-range-slider>
         <button
-          (click)="cardCountFilter.setValue([0, 5], { emitEvent: false })"
+          (click)="
+            cardCountFilter.setValue([0, collectionCountMax() ?? 5], {
+              emitEvent: false
+            })
+          "
           class="w-12 text-[#e2e4e6]"
           type="button">
           <i class="pi pi-refresh"></i>
@@ -147,8 +154,12 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="keywordFilter"
         [options]="keywords"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Keyword"
+        appendTo="body"
+        placeholder="Select a Keyword"
         display="chip"
         scrollHeight="250px"
         class="mx-auto my-1 w-full max-w-[250px]"
@@ -158,8 +169,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="formFilter"
         [options]="forms"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Form"
+        placeholder="Select a Form"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -169,8 +183,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="attributeFilter"
         [options]="attributes"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select an Attribute"
+        placeholder="Select an Attribute"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -180,8 +197,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="typeFilter"
         [options]="types"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Type"
+        placeholder="Select a Type"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -191,8 +211,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="specialRequirementsFilter"
         [options]="specialRequirements"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Special Requirement"
+        placeholder="Select a Special Requirement"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -202,8 +225,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="illustratorFilter"
         [options]="illustrators"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select an Illustrator"
+        placeholder="Select an Illustrator"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -213,8 +239,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="restrictionsFilter"
         [options]="restrictions"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Restrictions"
+        placeholder="Select a Restrictions"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -224,8 +253,11 @@ import { VersionFilterComponent } from './version-filter.component';
       <p-multiSelect
         [formControl]="presetFilter"
         [options]="presets"
+        [filter]="false"
+        [showClear]="false"
+        [showHeader]="false"
         [showToggleAll]="false"
-        defaultLabel="Select a Preset"
+        placeholder="Select a Preset"
         display="chip"
         scrollHeight="250px"
         class="mx-auto mb-1 w-full max-w-[250px]"
@@ -253,6 +285,10 @@ import { VersionFilterComponent } from './version-filter.component';
 })
 export class FilterSideBoxComponent implements OnInit, OnDestroy {
   @Input() public showColors: boolean;
+  messageService = inject(MessageService);
+
+  filterStore = inject(FilterStore);
+  saveStore = inject(SaveStore);
 
   keywordFilter = new UntypedFormControl([]);
   formFilter = new UntypedFormControl([]);
@@ -299,61 +335,58 @@ export class FilterSideBoxComponent implements OnInit, OnDestroy {
   resetEmitter = new EventEmitter<void>();
 
   private filter: IFilter;
-  private onDestroy$ = new Subject();
+  updateFilter = effect(
+    () => {
+      const filter = this.filterStore.filter();
+      this.filter = filter;
 
-  constructor(
-    private store: Store,
-    private messageService: MessageService,
-  ) {}
-
-  ngOnInit(): void {
-    this.store
-      .select(selectFilter)
-      .pipe(takeUntil(this.onDestroy$))
-      .subscribe((filter) => {
-        this.filter = filter;
-
-        this.levelFilter.setValue(filter.levelFilter, { emitEvent: false });
-        this.playCostFilter.setValue(filter.playCostFilter, {
-          emitEvent: false,
-        });
-        this.digivolutionFilter.setValue(filter.digivolutionFilter, {
-          emitEvent: false,
-        });
-        this.dpFilter.setValue(filter.dpFilter, { emitEvent: false });
-        this.cardCountFilter.setValue(filter.cardCountFilter, {
-          emitEvent: false,
-        });
-
-        this.keywordFilter.setValue(filter.keywordFilter, { emitEvent: false });
-        this.formFilter.setValue(filter.formFilter, { emitEvent: false });
-        this.attributeFilter.setValue(filter.attributeFilter, {
-          emitEvent: false,
-        });
-        this.typeFilter.setValue(filter.typeFilter, { emitEvent: false });
-        this.illustratorFilter.setValue(filter.illustratorFilter, {
-          emitEvent: false,
-        });
-        this.specialRequirementsFilter.setValue(
-          filter.specialRequirementsFilter,
-          { emitEvent: false },
-        );
-        this.restrictionsFilter.setValue(filter.restrictionsFilter, {
-          emitEvent: false,
-        });
-        this.sourceFilter.setValue(filter.sourceFilter, {
-          emitEvent: false,
-        });
-        this.presetFilter.setValue(filter.presetFilter, {
-          emitEvent: false,
-        });
+      this.levelFilter.setValue(filter.levelFilter, { emitEvent: false });
+      this.playCostFilter.setValue(filter.playCostFilter, {
+        emitEvent: false,
+      });
+      this.digivolutionFilter.setValue(filter.digivolutionFilter, {
+        emitEvent: false,
+      });
+      this.dpFilter.setValue(filter.dpFilter, { emitEvent: false });
+      this.cardCountFilter.setValue(filter.cardCountFilter, {
+        emitEvent: false,
       });
 
+      this.keywordFilter.setValue(filter.keywordFilter, { emitEvent: false });
+      this.formFilter.setValue(filter.formFilter, { emitEvent: false });
+      this.attributeFilter.setValue(filter.attributeFilter, {
+        emitEvent: false,
+      });
+      this.typeFilter.setValue(filter.typeFilter, { emitEvent: false });
+      this.illustratorFilter.setValue(filter.illustratorFilter, {
+        emitEvent: false,
+      });
+      this.specialRequirementsFilter.setValue(
+        filter.specialRequirementsFilter,
+        { emitEvent: false },
+      );
+      this.restrictionsFilter.setValue(filter.restrictionsFilter, {
+        emitEvent: false,
+      });
+      this.sourceFilter.setValue(filter.sourceFilter, {
+        emitEvent: false,
+      });
+      this.presetFilter.setValue(filter.presetFilter, {
+        emitEvent: false,
+      });
+    },
+    { allowSignalWrites: true },
+  );
+
+  collectionCountMax = computed(() => this.saveStore.settings().countMax);
+  private onDestroy$ = new Subject();
+
+  ngOnInit(): void {
     this.filterFormGroup.valueChanges
-      .pipe(debounceTime(500), takeUntil(this.onDestroy$))
+      .pipe(debounceTime(200), takeUntil(this.onDestroy$))
       .subscribe((filterValue) => {
         const filter: IFilter = { ...this.filter, ...filterValue };
-        this.store.dispatch(WebsiteActions.setFilter({ filter }));
+        this.filterStore.updateFilter(filter);
       });
   }
 
@@ -364,7 +397,7 @@ export class FilterSideBoxComponent implements OnInit, OnDestroy {
 
   reset() {
     this.resetEmitter.emit();
-    this.store.dispatch(WebsiteActions.setFilter({ filter: emptyFilter }));
+    this.filterStore.updateFilter(emptyFilter);
     this.messageService.add({
       severity: 'info',
       detail: 'All filter were reset.',
